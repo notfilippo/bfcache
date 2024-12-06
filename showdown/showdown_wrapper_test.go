@@ -1,10 +1,12 @@
-package bfcache_test
+package showdown_test
 
 import (
+	"sync"
 	"unsafe"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/allegro/bigcache/v3"
+	"github.com/notfilippo/bfcache"
 )
 
 type GenericCache interface {
@@ -40,6 +42,34 @@ func (b *fastcacheWrapper) Set(key []byte, value []byte) {
 
 func (b *fastcacheWrapper) Get(key []byte) []byte {
 	return b.inner.GetBig(nil, key)
+}
+
+type syncmapWrapper struct {
+	inner sync.Map
+}
+
+func (b *syncmapWrapper) Set(key []byte, value []byte) {
+	b.inner.Store(bytesToString(key), value)
+}
+
+func (b *syncmapWrapper) Get(key []byte) []byte {
+	value, ok := b.inner.Load(bytesToString(key))
+	if !ok {
+		return nil
+	}
+	return value.([]byte)
+}
+
+type bfcacheWrapper struct {
+	inner *bfcache.Cache
+}
+
+func (b *bfcacheWrapper) Set(key []byte, value []byte) {
+	b.inner.Set(key, value)
+}
+
+func (b *bfcacheWrapper) Get(key []byte) []byte {
+	return b.inner.Get(key)
 }
 
 func bytesToString(b []byte) string {
