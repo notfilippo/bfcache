@@ -34,7 +34,7 @@ jobs:
       run: go install golang.org/x/perf/cmd/...@latest
 
     - name: Benchmark
-      run: go test -bench=. -count=5 -benchtime=2000x -run=^a ./... > bench.txt
+      run: go test -bench=. -count=10 -benchtime=2000x -run=^a ./... > bench.txt
       
     - name: Show results
       run: benchstat bench.txt
