@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/allegro/bigcache/v3"
@@ -17,21 +18,30 @@ const (
 	cacheEntryCount = 8_000_000
 )
 
-func BenchmarkBigCacheGet(b *testing.B) {
+func newBigCache(tb testing.TB) GenericCache {
 	ctx := context.Background()
 	cache, err := bigcache.New(ctx, bigcache.Config{
 		Shards:           1024,
+		LifeWindow:       1 * time.Hour,
 		HardMaxCacheSize: cacheSize,
 		MaxEntrySize:     cacheEntrySize,
 		StatsEnabled:     true,
 	})
-	require.NoError(b, err)
-	benchmarkGenericGet(b, &bigcacheWrapper{cache})
+	require.NoError(tb, err)
+	return &bigcacheWrapper{cache}
+}
+
+func newFastCache() GenericCache {
+	cache := fastcache.New(cacheSize)
+	return &fastcacheWrapper{cache}
+}
+
+func BenchmarkBigCacheGet(b *testing.B) {
+	benchmarkGenericGet(b, newBigCache(b))
 }
 
 func BenchmarkFastCacheGet(b *testing.B) {
-	cache := fastcache.New(cacheSize)
-	benchmarkGenericGet(b, &fastcacheWrapper{cache})
+	benchmarkGenericGet(b, newFastCache())
 }
 
 func benchmarkGenericGet(b *testing.B, cache GenericCache) {
@@ -42,7 +52,7 @@ func benchmarkGenericGet(b *testing.B, cache GenericCache) {
 
 	for i := uint64(0); i < cacheEntryCount; i++ {
 		binary.NativeEndian.PutUint64(key, i)
-		rng.Read(value[:0])
+		rng.Read(value[0:])
 		cache.Set(key, value)
 	}
 
@@ -58,4 +68,34 @@ func benchmarkGenericGet(b *testing.B, cache GenericCache) {
 			cache.Get(key)
 		}
 	})
+}
+
+func TestBigCacheCorrectness(t *testing.T) {
+	testGenericCorrectness(t, newBigCache(t))
+}
+
+func TestFastCacheCorrectness(t *testing.T) {
+	testGenericCorrectness(t, newFastCache())
+}
+
+func testGenericCorrectness(t *testing.T, cache GenericCache) {
+	rng := rand.New(rand.NewSource(0))
+
+	key := make([]byte, binary.MaxVarintLen64)
+	value := make([]byte, cacheEntrySize)
+
+	for i := uint64(0); i < cacheEntryCount; i++ {
+		binary.NativeEndian.PutUint64(key, i)
+		rng.Read(value[0:])
+		cache.Set(key, value)
+	}
+
+	// Let's reset the random generator
+	rng = rand.New(rand.NewSource(0))
+
+	for i := uint64(0); i < cacheEntryCount; i++ {
+		binary.NativeEndian.PutUint64(key, i)
+		rng.Read(value[0:])
+		require.Equal(t, value, cache.Get(key), "failed to verify key %d", i)
+	}
 }
