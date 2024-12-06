@@ -2,8 +2,8 @@ package bfcache_test
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/binary"
+	"math/rand"
 	"testing"
 
 	"github.com/VictoriaMetrics/fastcache"
@@ -16,12 +16,6 @@ const (
 	cacheEntrySize  = 800                    // 800 B
 	cacheEntryCount = 8_000_000
 )
-
-func newValue(size uint) []byte {
-	buf := make([]byte, size)
-	rand.Read(buf)
-	return buf
-}
 
 func BenchmarkBigCacheGet(b *testing.B) {
 	ctx := context.Background()
@@ -41,21 +35,27 @@ func BenchmarkFastCacheGet(b *testing.B) {
 }
 
 func benchmarkGenericGet(b *testing.B, cache GenericCache) {
-	keys := make([][]byte, cacheEntryCount)
+	rng := rand.New(rand.NewSource(0))
+
+	key := make([]byte, binary.MaxVarintLen64)
+	value := make([]byte, cacheEntrySize)
 
 	for i := uint64(0); i < cacheEntryCount; i++ {
-		key := make([]byte, binary.MaxVarintLen64)
 		binary.NativeEndian.PutUint64(key, i)
-		cache.Set(key, newValue(cacheEntrySize))
-		keys[i] = key
+		rng.Read(value[:0])
+		cache.Set(key, value)
 	}
 
 	b.ResetTimer()
+
 	b.RunParallel(func(p *testing.PB) {
-		var i uint64
+		key := make([]byte, binary.MaxVarintLen64)
+		i := uint64(0)
 		for p.Next() {
-			cache.Get(keys[i])
-			i += 1
+			binary.NativeEndian.PutUint64(key, i)
+			i = (i + 400) % cacheEntryCount
+
+			cache.Get(key)
 		}
 	})
 }
